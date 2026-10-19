@@ -1,0 +1,73 @@
+# Shared C# analyzer baseline. Reference this file through GlobalAnalyzerConfigFiles.
+# Project .editorconfig entries override these defaults. Keep formatting there.
+is_global = true
+global_level = 0
+
+# Prefer an explicit declared type in production code.
+csharp_style_var_for_built_in_types = false
+csharp_style_var_when_type_is_apparent = false
+csharp_style_var_elsewhere = false
+dotnet_diagnostic.IDE0008.severity = warning
+
+# Prefer Order order = new(); where the project's language version supports it.
+csharp_style_implicit_object_creation_when_type_is_apparent = true
+dotnet_diagnostic.IDE0090.severity = suggestion
+
+# Naming checks cover casing and prefixes; meaning still requires review.
+# Build diagnostics also require the consuming toolchain's code-style analyzers.
+dotnet_diagnostic.IDE1006.severity = warning
+
+dotnet_naming_style.standards_pascal_case.capitalization = pascal_case
+dotnet_naming_style.standards_camel_case.capitalization = camel_case
+dotnet_naming_style.standards_interface_name.capitalization = pascal_case
+dotnet_naming_style.standards_interface_name.required_prefix = I
+dotnet_naming_style.standards_private_field.capitalization = camel_case
+dotnet_naming_style.standards_private_field.required_prefix = _
+
+dotnet_naming_symbols.standards_types_and_members.applicable_kinds = namespace, class, struct, enum, delegate, method, property, event, local_function
+dotnet_naming_symbols.standards_types_and_members.applicable_accessibilities = *
+dotnet_naming_rule.standards_types_and_members.symbols = standards_types_and_members
+dotnet_naming_rule.standards_types_and_members.style = standards_pascal_case
+dotnet_naming_rule.standards_types_and_members.severity = warning
+
+dotnet_naming_symbols.standards_interfaces.applicable_kinds = interface
+dotnet_naming_symbols.standards_interfaces.applicable_accessibilities = *
+dotnet_naming_rule.standards_interfaces.symbols = standards_interfaces
+dotnet_naming_rule.standards_interfaces.style = standards_interface_name
+dotnet_naming_rule.standards_interfaces.severity = warning
+
+dotnet_naming_symbols.standards_locals_and_parameters.applicable_kinds = local, parameter
+dotnet_naming_symbols.standards_locals_and_parameters.applicable_accessibilities = *
+dotnet_naming_rule.standards_locals_and_parameters.symbols = standards_locals_and_parameters
+dotnet_naming_rule.standards_locals_and_parameters.style = standards_camel_case
+dotnet_naming_rule.standards_locals_and_parameters.severity = warning
+
+# Constants have their own rule so local constants can use PascalCase too.
+dotnet_naming_symbols.standards_constants.applicable_kinds = field, local
+dotnet_naming_symbols.standards_constants.applicable_accessibilities = *
+dotnet_naming_symbols.standards_constants.required_modifiers = const
+dotnet_naming_rule.standards_constants.symbols = standards_constants
+dotnet_naming_rule.standards_constants.style = standards_pascal_case
+dotnet_naming_rule.standards_constants.severity = warning
+
+# Naming rules cannot select "not static". The more-specific static rule below
+# exempts static fields; the private-constant rule preserves PascalCase constants.
+dotnet_naming_symbols.standards_private_fields.applicable_kinds = field
+dotnet_naming_symbols.standards_private_fields.applicable_accessibilities = private
+dotnet_naming_rule.standards_private_fields.symbols = standards_private_fields
+dotnet_naming_rule.standards_private_fields.style = standards_private_field
+dotnet_naming_rule.standards_private_fields.severity = warning
+
+dotnet_naming_symbols.standards_private_static_fields.applicable_kinds = field
+dotnet_naming_symbols.standards_private_static_fields.applicable_accessibilities = private
+dotnet_naming_symbols.standards_private_static_fields.required_modifiers = static
+dotnet_naming_rule.standards_private_static_fields.symbols = standards_private_static_fields
+dotnet_naming_rule.standards_private_static_fields.style = standards_private_field
+dotnet_naming_rule.standards_private_static_fields.severity = none
+
+dotnet_naming_symbols.standards_private_constants.applicable_kinds = field
+dotnet_naming_symbols.standards_private_constants.applicable_accessibilities = private
+dotnet_naming_symbols.standards_private_constants.required_modifiers = const
+dotnet_naming_rule.standards_private_constants.symbols = standards_private_constants
+dotnet_naming_rule.standards_private_constants.style = standards_pascal_case
+dotnet_naming_rule.standards_private_constants.severity = warning
