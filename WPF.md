@@ -8,6 +8,8 @@ Last reviewed: 19 October 2026.
 
 Deliver a working implementation with coherent responsibilities, encapsulated state, explicit dependencies and deliberate resource ownership. Treat these qualities as completion criteria throughout the work. Explain material departures and their consequences.
 
+Keep ViewModels separate from views. Their construction, state changes and commands must be testable without loading XAML, creating controls, starting a WPF `Application` or running a real `Dispatcher`.
+
 Choose the smallest coherent design that meets the requirement. Class counts, interface counts and line counts do not establish design quality.
 
 ## Before changing code
@@ -34,6 +36,7 @@ Use these responsibilities as a design guide, not a requirement to create a sepa
 - Keep dependencies explicit. Prefer supplying collaborators over hidden service lookups and global mutable state. Introduce interfaces for meaningful contracts, substitution or external boundaries, rather than for every class.
 - Use composition for independent behaviours. Use inheritance where the derived type honours the base contract; a focused ViewModel base class is reasonable, a hierarchy of unrelated features is not.
 - Keep domain and reusable application logic independent of WPF types. Keep direct access to controls, windows and the visual tree in the presentation integration layer.
+- ViewModels expose presentation state and actions without creating or retaining view instances. Put view-specific operations, such as showing a window or moving focus, in view integration. Supply a focused contract when the ViewModel needs to request such an operation; do not discover views or services through `Application.Current`.
 - Allow focused code-behind for view concerns such as focus or animation. Moving that code into a behaviour or service must have a concrete benefit. Business decisions, persistence and application workflows need an appropriate owner outside the view.
 
 ## State, bindings and commands
@@ -49,16 +52,40 @@ Use these responsibilities as a design guide, not a requirement to create a sepa
 
 References: [data binding][binding], [commands][commands].
 
+## CommunityToolkit.Mvvm
+
+Consider `CommunityToolkit.Mvvm` for new WPF work needing MVVM support. In existing applications, use the chosen toolkit consistently and justify a migration or another overlapping framework. The toolkit supplies notification and command infrastructure; responsibility boundaries still need deliberate design.
+
+- Use `ObservableObject` and `SetProperty` for observable state where appropriate. Reuse the project's existing compatible base class rather than introducing another hierarchy solely for notification plumbing.
+- Prefer `[ObservableProperty]` and `[RelayCommand]` where source generation is supported and fits the project. Keep the containing types `partial` as required, and check the installed package, compiler and generator support before choosing syntax from newer examples. Explicit properties and command instances remain valid when needed.
+- Change generated properties through their property setters when notifications are required; writing their backing fields bypasses the generated notification logic.
+- Use `[NotifyPropertyChangedFor]` for dependent properties and `[NotifyCanExecuteChangedFor]` or `NotifyCanExecuteChanged()` for affected command availability. The toolkit does not automatically discover changes to a `CanExecute` condition.
+- Use `AsyncRelayCommand` or `[RelayCommand]` on a `Task`-returning method for asynchronous actions. Define cancellation, concurrent execution and failure handling deliberately. Use exposed state such as `IsRunning` when it represents the required busy state, and pass cancellation tokens through to the work that supports cancellation.
+- Handle expected failures at the operation boundary and expose useful presentation feedback. Do not assume an async command absorbs exceptions, or enable `FlowExceptionsToTaskScheduler` without an owner that observes failures.
+- Keep messenger use purposeful. Prefer explicit collaborators for a direct request and response. If using `IMessenger`, make its scope and recipient lifetime explicit and avoid introducing another global event bus merely because the toolkit provides one.
+- Test the ViewModel through its public properties and commands. Await `IAsyncRelayCommand.ExecuteAsync` in asynchronous tests; assert the application's state and command behaviour without constructing a view or testing the toolkit's generated implementation itself.
+
+References: [MVVM Toolkit overview][mvvm], [ObservableObject][observable-object], [observable property generation][observable-property], [command generation][relay-command], [async commands][async-command], [messenger][messenger].
+
 ## Threading and asynchronous work
 
-- Access thread-affine WPF objects through their owning UI thread. Keep dispatched updates small; do not assume every window uses one global dispatcher.
 - Await asynchronous work instead of blocking the UI thread with `.Wait()` or `.Result()`. Use asynchronous APIs directly for I/O; use `Task.Run` for appropriate CPU work or identified blocking work that can safely run elsewhere. Adding `async` alone does not move work to another thread.
 - Return awaitable operations from application code. Reserve `async void` for framework-required event handlers, with error handling at that boundary. Keep constructors free of untracked asynchronous work.
 - Define busy state, repeated-command behaviour, cancellation and failure reporting. Prevent late or superseded results from updating a replaced or inactive presentation. Give background tasks an owner that observes their completion and failures.
 - Default to updating UI-bound collections on the owning UI thread. `ObservableCollection<T>` is not a cross-thread synchronization policy. Where background mutation is justified, coordinate application and WPF access using an explicit strategy such as `BindingOperations.EnableCollectionSynchronization`; follow its registration, locking and notification requirements.
-- Put thread switching at the relevant presentation boundary. Keep reusable application logic independent of a particular dispatcher.
 
 References: [WPF threading][threading], [asynchronous scenarios][async], [collection synchronization][collection-sync].
+
+### Dispatcher usage
+
+- Keep real WPF dispatcher access in view integration or a focused presentation adapter. Arrange background callbacks to enter presentation state through the established scheduling boundary. ViewModel business and presentation decisions must remain testable without a real dispatcher; do not add a dispatcher wrapper to every class.
+- Use the dispatcher that owns the affected WPF object. Obtain it from that object or the established presentation owner. `Dispatcher.CurrentDispatcher` on a worker thread returns that thread's dispatcher, creating one if needed; it does not locate the UI thread. Do not assume `Application.Current.Dispatcher` owns every window.
+- Use `CheckAccess()` when a boundary may need to marshal an incoming call. Use `VerifyAccess()` to enforce a documented UI-thread requirement. Neither method moves execution to another thread.
+- Prefer `InvokeAsync` for short queued presentation updates, and await completion when subsequent work or error handling depends on them. Its callback still runs on the UI thread. Keep expensive work outside the callback and justify synchronous `Invoke` where required.
+- Keep dispatched callbacks simple. If dispatching a `Func<Task>`, observe the inner task as well as the dispatch operation so completion and failures are not lost. Avoid passing an async lambda as an `Action`, which would create `async void` work.
+- Use dispatcher priority for a defined scheduling need. Repeated dispatching, priority changes, sleeps or nested message pumps must not be used to conceal binding failures or race conditions. Account for queued work when its view is deactivated or its dispatcher shuts down.
+
+References: [WPF threading][threading], [CurrentDispatcher][current-dispatcher], [thread access checks][dispatcher-access], [InvokeAsync][dispatcher-invoke].
 
 ## Ownership and lifetime
 
@@ -79,6 +106,17 @@ References: [weak events][weak-events], [Unloaded semantics][unloaded].
 
 References: [control authoring][controls], [dependency properties][properties].
 
+### Dependency property generation
+
+Consider the WPF-compatible [`DependencyPropertyGenerator` NuGet package][dp-generator-package] when repeated dependency-property declarations would benefit from source generation. This is an optional implementation choice for controls and attached properties. Ordinary ViewModel state should remain ordinary observable properties.
+
+- Check the selected package's compiler, source-generator and target-framework compatibility, including CI builds. Use syntax supported by the project; do not enable preview language features merely to copy a newer example.
+- Review the generated registration, owner type, CLR wrapper, defaults, binding metadata and change callbacks. Preserve validation, coercion and read-only semantics where required, using explicit declarations when the generator cannot express the needed contract. Change the source declarations and callbacks, not generated output.
+- Keep callbacks focused on control behaviour and use the same ownership and thread-access rules as handwritten dependency properties. Avoid shared mutable metadata defaults; consider instance ownership when a property holds a collection or another mutable object.
+- Adopt generation where it improves clarity and maintenance. It does not justify converting ViewModels to `DependencyObject`, adding a WPF runtime requirement to their unit tests or broadly rewriting existing controls.
+
+References: [package documentation][dp-generator-source], [WPF dependency properties][properties].
+
 ## Performance and evidence
 
 - Measure the affected scenario before selecting a performance fix. Distinguish startup cost, interaction latency, rendering and retained memory; report the environment and workload with comparisons.
@@ -88,19 +126,43 @@ References: [control authoring][controls], [dependency properties][properties].
 
 Reference: [control performance][performance].
 
+## Unit tests and integration tests
+
+Separation is the governing principle: test ViewModel behaviour without a view, and verify WPF wiring at the appropriate integration boundary. Choose checks from requirements, contracts and supported regression scenarios. Keep effort proportionate to the risk; test counts and coverage percentages do not establish correctness.
+
+### Unit tests: ViewModels without views
+
+- Construct the ViewModel directly with suitable collaborators. Exercise its public actions and commands, then assert observable state, results, validation and command availability. Test domain rules and application operations independently where they own the behaviour.
+- Keep views, XAML loading, real dispatcher execution and WPF `Application` startup out of the unit-test suite. Do not add STA attributes, custom dispatcher pumps or view instances to make a ViewModel unit test run. If it requires these, inspect the dependency boundary and separate the behaviour under test from WPF integration.
+- Where relevant, cover dependent property notifications, `CanExecuteChanged`, busy state, cancellation, failure, repeated input and superseded results. Test notifications that consumers rely on, rather than retesting every generated setter.
+- Control application services, time and external events through existing meaningful contracts or simple fakes. Assert outcomes and contractually significant interactions; avoid coupling tests to private methods, incidental call order or the exact arrangement of helper objects.
+- Await asynchronous operations and control their completion explicitly. Do not use fixed sleeps to guess when work has finished. A substitute scheduling dependency may support isolated ViewModel tests, but it does not establish that WPF dispatching works.
+
+### Integration tests
+
+- Exercise the real cooperating components across the boundary at risk, such as a ViewModel with its application service or an adapter with a controlled external system. Integration tests that do not involve WPF need no view or dispatcher.
+- Keep view and real dispatcher tests in a separate WPF integration suite, using the project's established Windows/WPF host where available. Such a host needs the appropriate STA thread and a functioning dispatcher/message loop for queued UI work. Marking an ordinary test STA alone does not provide that environment.
+- For a WPF change, exercise the actual XAML, `DataContext`, bindings, commands, resources, template or lifecycle implicated by it. Await meaningful completion with bounded timeouts. Verify the actual control state and the required visual behaviour; a ViewModel assertion cannot establish those results.
+- Keep the integration host responsible for view cleanup, owned resources, asynchronous failures and dispatcher lifetime. Do not make ordinary unit tests depend on shared windows or application state.
+
+### When view automation is impractical
+
+Use established integration facilities where they can provide reliable evidence. Do not create a bespoke UI testing framework, add test-only behaviour to production code or add fragile STA and timing workarounds as part of routine feature or bug work. Scope any substantial test-infrastructure work as a deliberate engineering task.
+
+When suitable automation or the required Windows environment is unavailable, record a focused manual verification scenario and its result, or state that it remains unverified. Include the relevant theme, display configuration, interaction and lifecycle conditions. Limited view automation is a reason to preserve separation and report the remaining gap honestly.
+
+References for WPF hosting requirements: [WPF threading][threading], [dispatcher message loop][dispatcher-run].
+
 ## Verification and completion
 
-Select checks that can expose a realistic failure in the changed behaviour. Keep verification proportionate to the risk and use the project's established test facilities.
-
-- Verify business rules and presentation state transitions independently where useful. Add or adapt focused automated checks when they protect the behaviour at risk.
-- For a WPF integration change, exercise the actual binding, command, template, layout or lifecycle involved. A passing ViewModel test cannot establish that the rendered control behaves correctly.
-- Where affected, check repeated activation, cancellation, rapid user input, stale results, empty data, failures, disposal and the required display configurations. Record manual verification when automation is unavailable.
+- For a bug fix, reproduce the failure at the level where it occurs and retain a useful regression check where practical. Confirm that the check distinguishes the faulty behaviour from the correction.
+- Select and run the relevant unit tests, integration tests and manual checks described above. Where affected, cover repeated activation, cancellation, rapid user input, stale results, empty data, failures, disposal and the required display configurations.
 - Review the resulting design: responsibilities, invariants, dependency direction, abstraction purpose and lifetime ownership. Address material weaknesses found within the agreed scope.
 - Report the behaviour changed, significant design decisions, checks actually performed and remaining uncertainty. State clearly when Windows execution or a required environment was unavailable. Do not report unperformed checks as passing.
 
 ### Example: an action should become disabled
 
-Identify the object that owns the eligibility rule. Expose the corresponding presentation state or command availability, notify when it changes, and let the view reflect it. Verify that the operation rejects invalid execution and that the actual control becomes disabled and looks disabled. If these disagree, trace the rule, notification, binding and template before adding a visual workaround.
+Identify the object that owns the eligibility rule. Expose the corresponding presentation state or command availability, notify when it changes, and let the view reflect it. Unit-test the rule, the ViewModel's command availability and the relevant notification without creating a button. Separately, use WPF integration testing or recorded manual verification to check that the actual control becomes disabled and looks disabled. If these disagree, trace the rule, notification, binding and template before adding a visual workaround.
 
 ## References
 
@@ -116,3 +178,15 @@ The links below are supporting documentation, not instructions to read every pag
 [controls]: https://learn.microsoft.com/en-us/dotnet/desktop/wpf/controls/control-authoring-overview
 [properties]: https://learn.microsoft.com/en-us/dotnet/desktop/wpf/properties/custom-dependency-properties
 [performance]: https://learn.microsoft.com/en-us/dotnet/desktop/wpf/advanced/optimizing-performance-controls
+[mvvm]: https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/
+[observable-object]: https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/observableobject
+[observable-property]: https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/generators/observableproperty
+[relay-command]: https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/generators/relaycommand
+[async-command]: https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/asyncrelaycommand
+[messenger]: https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/messenger
+[current-dispatcher]: https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatcher.currentdispatcher
+[dispatcher-access]: https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatcher.checkaccess
+[dispatcher-invoke]: https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatcher.invokeasync
+[dispatcher-run]: https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatcher.run
+[dp-generator-package]: https://www.nuget.org/packages/DependencyPropertyGenerator
+[dp-generator-source]: https://github.com/HavenDV/DependencyPropertyGenerator
