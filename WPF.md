@@ -2,15 +2,15 @@
 
 Use this guide when designing, implementing or reviewing Windows Presentation Foundation applications and libraries. Apply the sections relevant to the change. These are engineering standards for people and coding agents; the Microsoft references explain the platform behaviour behind them.
 
+Read [C# engineering standards](CSHARP.md) first for the shared OOP, SOLID, composition, naming, type, dependency and testing rules. This guide adds the WPF-specific responsibilities and runtime requirements.
+
 Last reviewed: 19 October 2026.
 
 ## Core expectation
 
-Deliver a working implementation with coherent responsibilities, encapsulated state, explicit dependencies and deliberate resource ownership. Treat these qualities as completion criteria throughout the work. Explain material departures and their consequences.
+Apply the [shared completion criteria](CSHARP.md#core-expectation) to WPF work, including its design quality and resource ownership.
 
 Keep ViewModels separate from views. Their construction, state changes and commands must be testable without loading XAML, creating controls, starting a WPF `Application` or running a real `Dispatcher`.
-
-Choose the smallest coherent design that meets the requirement. Class counts, interface counts and line counts do not establish design quality.
 
 ## Before changing code
 
@@ -21,7 +21,7 @@ Choose the smallest coherent design that meets the requirement. Class counts, in
 
 ## Object design and MVVM responsibilities
 
-Use these responsibilities as a design guide, not a requirement to create a separate class or project for every row.
+Apply the [shared object-design and SOLID rules](CSHARP.md#object-design-and-solid) to these WPF responsibilities. The rows do not require a separate class or project for each role.
 
 | Area | Responsibility |
 | --- | --- |
@@ -32,9 +32,8 @@ Use these responsibilities as a design guide, not a requirement to create a sepa
 | Composition and lifetime owner | Constructing collaborators and deciding their scopes, activation and cleanup. |
 
 - Put behaviour with the object responsible for it. Avoid adding unrelated work to the most convenient ViewModel or collecting it in an unstructured helper class.
-- Protect business invariants through meaningful operations. Editable bindable properties and plain data transfer objects are legitimate; callers must not bypass domain rules by coordinating arbitrary setters or mutating exposed collections.
-- Keep dependencies explicit. Prefer supplying collaborators over hidden service lookups and global mutable state. Introduce interfaces for meaningful contracts, substitution or external boundaries, rather than for every class.
-- Use composition for independent behaviours. Use inheritance where the derived type honours the base contract; a focused ViewModel base class is reasonable, a hierarchy of unrelated features is not.
+- Editable bindable properties are legitimate presentation state; changes that affect business invariants go through the responsible domain or application operation.
+- Prefer composed collaborators for independent ViewModel behaviours. A focused ViewModel base class can share presentation infrastructure where justified; it must not become a hierarchy of unrelated features.
 - Keep domain and reusable application logic independent of WPF types. Keep direct access to controls, windows and the visual tree in the presentation integration layer.
 - ViewModels expose presentation state and actions without creating or retaining view instances. Put view-specific operations, such as showing a window or moving focus, in view integration. Supply a focused contract when the ViewModel needs to request such an operation; do not discover views or services through `Application.Current`.
 - Allow focused code-behind for view concerns such as focus or animation. Moving that code into a behaviour or service must have a concrete benefit. Business decisions, persistence and application workflows need an appropriate owner outside the view.
